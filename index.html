@@ -45,6 +45,8 @@
             justify-content: space-between;
             align-items: center;
             font-size: 0.9rem;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .status-online {
@@ -342,6 +344,32 @@
             left: 0;
         }
 
+        /* Connection Status Indicator */
+        .connection-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: white;
+            font-size: 12px;
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .connection-indicator.show {
+            opacity: 1;
+        }
+
+        .connection-indicator.online {
+            background: #4caf50;
+        }
+
+        .connection-indicator.offline {
+            background: #f44336;
+        }
+
         @media (max-width: 768px) {
             .controls {
                 grid-template-columns: 1fr;
@@ -359,10 +387,18 @@
             .ingredients-list ul {
                 columns: 1;
             }
+
+            .header h1 {
+                font-size: 2rem;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="connection-indicator" id="connectionIndicator">
+        🟢 Verbunden
+    </div>
+
     <div class="container">
         <div class="header">
             <h1>🍳 Rezeptkatalog HelloFresh</h1>
@@ -395,8 +431,8 @@
         </div>
 
         <div id="errorMessage" class="error-message" style="display: none;">
-            ❌ <strong>Firebase Konfiguration fehlt!</strong><br>
-            Bitte füge deine Firebase-Konfiguration in den Script-Bereich ein und lade die Seite neu.
+            ❌ <strong>Firebase Konfiguration wird überprüft...</strong><br>
+            Falls dieser Fehler bestehen bleibt, bitte Firebase-Setup überprüfen.
         </div>
 
         <div class="recipes-grid" id="recipesGrid">
@@ -466,8 +502,11 @@
                 db.enableNetwork().then(() => {
                     updateConnectionStatus(true);
                     loadRecipes();
-                }).catch(() => {
+                    showConnectionIndicator('online');
+                }).catch((error) => {
+                    console.error('Firebase Network Error:', error);
                     updateConnectionStatus(false);
+                    showConnectionIndicator('offline');
                 });
 
                 return true;
@@ -475,8 +514,19 @@
                 console.error('Firebase Initialisierung fehlgeschlagen:', error);
                 document.getElementById('errorMessage').style.display = 'block';
                 document.getElementById('loadingMessage').style.display = 'none';
+                showConnectionIndicator('offline');
                 return false;
             }
+        }
+
+        function showConnectionIndicator(status) {
+            const indicator = document.getElementById('connectionIndicator');
+            indicator.className = `connection-indicator show ${status}`;
+            indicator.textContent = status === 'online' ? '🟢 Verbunden' : '🔴 Offline';
+            
+            setTimeout(() => {
+                indicator.classList.remove('show');
+            }, 3000);
         }
 
         // App-Variablen
@@ -495,6 +545,7 @@
                 addBtn.disabled = false;
                 exportBtn.disabled = false;
                 searchBox.disabled = false;
+                document.getElementById('errorMessage').style.display = 'none';
             } else {
                 statusEl.textContent = '🔴 Offline - Nur Lesen möglich';
                 statusEl.className = 'status-offline';
@@ -530,7 +581,62 @@
                 console.error('Fehler beim Laden der Rezepte:', error);
                 document.getElementById('loadingMessage').style.display = 'none';
                 updateConnectionStatus(false);
+                
+                // Demo-Daten laden wenn Firebase nicht verfügbar
+                loadDemoRecipes();
             }
+        }
+
+        function loadDemoRecipes() {
+            // Demo-Rezept für Präsentationszwecke
+            recipes = [
+                {
+                    id: 'demo-1',
+                    title: 'Demo: Pasta mit Tomatensauce',
+                    category: 'Vegetarisch',
+                    portions: 2,
+                    time: '25 Min',
+                    calories: 580,
+                    tags: ['vegetarisch', 'pasta', 'demo'],
+                    ingredients: [
+                        '200g Spaghetti',
+                        '400g passierte Tomaten',
+                        '2 Knoblauchzehen',
+                        '1 Zwiebel',
+                        'Basilikum',
+                        'Olivenöl',
+                        'Salz und Pfeffer'
+                    ],
+                    steps: [
+                        {
+                            title: 'Wasser aufsetzen',
+                            description: 'Großen Topf mit Salzwasser zum Kochen bringen.'
+                        },
+                        {
+                            title: 'Sauce vorbereiten',
+                            description: 'Zwiebel und Knoblauch fein hacken, in Olivenöl anbraten.'
+                        },
+                        {
+                            title: 'Tomaten hinzufügen',
+                            description: 'Passierte Tomaten hinzufügen, 10 Min köcheln lassen.'
+                        }
+                    ],
+                    nutrition: {
+                        energy: 580,
+                        fat: 12,
+                        carbs: 95,
+                        protein: 20,
+                        fiber: 8,
+                        sugar: 12
+                    },
+                    dataSize: '2.1 KB',
+                    createdAt: new Date()
+                }
+            ];
+            
+            document.getElementById('recipeCount').textContent = `📚 ${recipes.length} Demo-Rezept geladen`;
+            document.getElementById('loadingMessage').style.display = 'none';
+            renderRecipes();
         }
 
         async function saveRecipe(recipe) {
@@ -561,6 +667,10 @@
 
         async function deleteRecipe(recipeId) {
             if (!isFirebaseConfigured) return;
+            if (recipeId.startsWith('demo-')) {
+                alert('❌ Demo-Rezepte können nicht gelöscht werden');
+                return;
+            }
 
             try {
                 await db.collection('recipes').doc(recipeId).delete();
@@ -595,12 +705,14 @@
                 card.className = 'recipe-card';
                 card.onclick = () => openRecipe(index);
                 
+                const isDemoRecipe = recipe.id && recipe.id.startsWith('demo-');
+                
                 card.innerHTML = `
-                    <div class="sync-status ${recipe.id ? '' : 'syncing'}"></div>
+                    <div class="sync-status ${recipe.id ? (isDemoRecipe ? 'error' : '') : 'syncing'}"></div>
                     ${recipe.mainImage ? `<div class="recipe-main-image" style="width: 100%; height: 200px; border-radius: 15px; margin-bottom: 15px; background-image: url('${recipe.mainImage}'); background-size: cover; background-position: center;"></div>` : ''}
                     <div class="recipe-header">
                         <div>
-                            <div class="recipe-title">${recipe.title}</div>
+                            <div class="recipe-title">${recipe.title}${isDemoRecipe ? ' (Demo)' : ''}</div>
                             <div class="recipe-meta">⏱️ ${recipe.time} | 👥 ${recipe.portions} Portionen | 🔥 ${recipe.calories} kcal</div>
                         </div>
                     </div>
@@ -651,8 +763,10 @@
             currentPortions = recipe.portions;
             
             const content = document.getElementById('recipeContent');
+            const isDemoRecipe = recipe.id && recipe.id.startsWith('demo-');
+            
             content.innerHTML = `
-                <h2>${recipe.title}</h2>
+                <h2>${recipe.title}${isDemoRecipe ? ' (Demo)' : ''}</h2>
                 <div class="recipe-meta" style="margin: 10px 0; font-size: 1.1rem;">
                     ⏱️ ${recipe.time} | 👥 ${recipe.portions} Portionen | 🔥 ${recipe.calories} kcal
                 </div>
@@ -713,7 +827,7 @@
                     </div>
                 </div>
 
-                ${recipe.id ? `
+                ${recipe.id && !isDemoRecipe ? `
                     <div style="margin-top: 30px; text-align: center;">
                         <button class="btn" style="background: #f44336;" onclick="confirmDeleteRecipe('${recipe.id}')">🗑️ Rezept löschen</button>
                     </div>
@@ -868,11 +982,13 @@
             if (isFirebaseConfigured) {
                 updateConnectionStatus(true);
                 loadRecipes();
+                showConnectionIndicator('online');
             }
         });
 
         window.addEventListener('offline', () => {
             updateConnectionStatus(false);
+            showConnectionIndicator('offline');
         });
     </script>
 </body>
