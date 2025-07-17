@@ -509,6 +509,21 @@
         <div class="recipes-grid" id="recipesGrid">
             <!-- Rezepte werden hier dynamisch geladen -->
         </div>
+
+        <!-- Version Info Footer -->
+        <div style="text-align: center; margin-top: 50px; padding: 20px; background: rgba(255,255,255,0.1); border-radius: 15px; color: white; font-size: 0.9rem;">
+            <div style="margin-bottom: 5px;">
+                <strong>🍳 HelloFresh Rezeptkatalog OCR</strong>
+            </div>
+            <div style="opacity: 0.8;">
+                Version 1.2.0 | Build 17.07.2025-14:30 | OCR + iOS Shortcut Support
+            </div>
+            <div style="font-size: 0.8rem; opacity: 0.6; margin-top: 5px;" id="buildInfo">
+                Firebase: <span id="firebaseStatus">Prüfe...</span> | 
+                OCR: <span id="ocrStatus">Prüfe...</span> |
+                Features: Horizontal Layout + 3-Stage OCR
+            </div>
+        </div>
     </div>
 
     <!-- OCR Upload Modal -->
@@ -521,7 +536,7 @@
                 <h3>📸 HelloFresh Rezept-Foto hochladen</h3>
                 <p>Ziehe dein kombiniertes Rezeptfoto hierher oder klicke zum Auswählen</p>
                 <p style="font-size: 0.9rem; color: #666; margin-top: 10px;">
-                    💡 Tipp: Verwende deinen iOS Shortcut für beste Ergebnisse!
+                    📱 <strong>Perfekt für deinen iOS Shortcut:</strong> Horizontal kombinierte Bilder werden automatisch erkannt!
                 </p>
                 <input type="file" id="fileInput" accept="image/*" capture="camera" style="display: none;">
                 <button class="btn btn-ocr" onclick="document.getElementById('fileInput').click()">📷 Foto auswählen</button>
@@ -2231,6 +2246,33 @@
             return result;
         }
 
+        // Bildkomplexität berechnen (mehr Farben = wahrscheinlich das Hauptbild)
+        function calculateImageComplexity(imageData) {
+            const data = imageData.data;
+            let complexity = 0;
+            let colorVariance = 0;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                
+                // Nicht-weiße Pixel zählen (Hauptbild hat mehr Farben)
+                if (r < 240 || g < 240 || b < 240) {
+                    complexity++;
+                    
+                    // Farbvariation bewerten (Essen hat viele verschiedene Farben)
+                    const brightness = (r + g + b) / 3;
+                    if (brightness > 50 && brightness < 200) { // Mittlere Helligkeit = interessant
+                        colorVariance++;
+                    }
+                }
+            }
+            
+            // Kombinierter Score: Komplexität + Farbvariation
+            return complexity + (colorVariance * 2);
+        }
+
         function displayOCRResults(data) {
             // Basis-Daten
             document.getElementById('detectedTitle').textContent = data.title;
@@ -2263,7 +2305,17 @@
                 const previewImage = document.getElementById('previewImage');
                 previewImage.src = data.mainImage;
                 previewImage.style.border = '3px solid #4caf50';
-                previewImage.title = 'Extrahiertes Hauptbild';
+                previewImage.title = 'Extrahiertes Hauptbild (horizontal kombiniert)';
+                
+                // Info-Text hinzufügen
+                const existingInfo = document.querySelector('.horizontal-info');
+                if (!existingInfo) {
+                    const infoDiv = document.createElement('div');
+                    infoDiv.className = 'horizontal-info';
+                    infoDiv.style.cssText = 'background: #e8f5e8; padding: 10px; border-radius: 8px; margin: 10px 0; font-size: 0.9rem; color: #2e7d32;';
+                    infoDiv.innerHTML = '📱 <strong>iOS Shortcut erkannt:</strong> Horizontal kombiniertes Bild analysiert';
+                    previewImage.parentNode.insertBefore(infoDiv, previewImage.nextSibling);
+                }
             }
         }
 
