@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rezeptkatalog HelloFresh</title>
+    <title>Rezeptkatalog HelloFresh - OCR Edition</title>
     <style>
         * {
             margin: 0;
@@ -93,6 +93,10 @@
 
         .btn-secondary {
             background: linear-gradient(45deg, #4ecdc4, #44a08d);
+        }
+
+        .btn-ocr {
+            background: linear-gradient(45deg, #9c27b0, #673ab7);
         }
 
         .search-box {
@@ -241,7 +245,7 @@
             margin: 20px auto;
             padding: 30px;
             border-radius: 20px;
-            max-width: 800px;
+            max-width: 900px;
             position: relative;
         }
 
@@ -276,6 +280,96 @@
         .upload-area.dragover {
             background: rgba(102, 126, 234, 0.1);
             border-color: #667eea;
+        }
+
+        .upload-area.processing {
+            border-color: #9c27b0;
+            background: rgba(156, 39, 176, 0.05);
+        }
+
+        .ocr-preview {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .ocr-preview.show {
+            display: block;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            height: 300px;
+            object-fit: contain;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .ocr-results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .ocr-section {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .ocr-section h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .ingredient-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .ingredient-list li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .step-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .step-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            margin-right: 10px;
+        }
+
+        .ocr-status {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .ocr-status.show {
+            display: block;
         }
 
         .sync-status {
@@ -344,32 +438,6 @@
             left: 0;
         }
 
-        /* Connection Status Indicator */
-        .connection-indicator {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 8px 16px;
-            border-radius: 20px;
-            color: white;
-            font-size: 12px;
-            z-index: 999;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .connection-indicator.show {
-            opacity: 1;
-        }
-
-        .connection-indicator.online {
-            background: #4caf50;
-        }
-
-        .connection-indicator.offline {
-            background: #f44336;
-        }
-
         @media (max-width: 768px) {
             .controls {
                 grid-template-columns: 1fr;
@@ -391,18 +459,18 @@
             .header h1 {
                 font-size: 2rem;
             }
+
+            .ocr-results {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="connection-indicator" id="connectionIndicator">
-        🟢 Verbunden
-    </div>
-
     <div class="container">
         <div class="header">
             <h1>🍳 Rezeptkatalog HelloFresh</h1>
-            <p>Alle eure liebsten HelloFresh Rezepte an einem Ort</p>
+            <p>Alle eure liebsten HelloFresh Rezepte an einem Ort - jetzt mit OCR! 🤖</p>
         </div>
 
         <div class="status-bar">
@@ -412,7 +480,8 @@
         </div>
 
         <div class="controls">
-            <button class="btn" onclick="openUploadModal()" id="addBtn" disabled>📷 Rezept hinzufügen</button>
+            <button class="btn btn-ocr" onclick="openUploadModal()" id="addBtn" disabled>🤖 Rezept scannen</button>
+            <button class="btn" onclick="openManualModal()" id="manualBtn" disabled>✍️ Manuell eingeben</button>
             <button class="btn btn-secondary" onclick="exportRecipes()" id="exportBtn" disabled>📄 Exportieren</button>
             <input type="text" class="search-box" id="searchBox" placeholder="🔍 Rezepte suchen..." oninput="filterRecipes()" disabled>
         </div>
@@ -424,6 +493,8 @@
             <div class="tag" data-filter="fisch">Fisch</div>
             <div class="tag" data-filter="schnell">Schnell (&lt;30min)</div>
             <div class="tag" data-filter="low-carb">Low Carb</div>
+            <div class="tag" data-filter="low-cal">Wenig Kalorien (&lt;600)</div>
+            <div class="tag" data-filter="quick-prep">Express (&lt;20min)</div>
         </div>
 
         <div id="loadingMessage" class="loading">
@@ -440,25 +511,72 @@
         </div>
     </div>
 
-    <!-- Upload Modal -->
+    <!-- OCR Upload Modal -->
     <div id="uploadModal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeUploadModal()">&times;</span>
-            <h2>📷 Neues Rezept hinzufügen</h2>
+            <h2>🤖 HelloFresh Rezept scannen</h2>
             
             <div class="upload-area" id="uploadArea">
-                <h3>📸 Foto hochladen oder aufnehmen</h3>
-                <p>Ziehe dein Rezeptfoto hierher oder klicke zum Auswählen</p>
+                <h3>📸 HelloFresh Rezept-Foto hochladen</h3>
+                <p>Ziehe dein kombiniertes Rezeptfoto hierher oder klicke zum Auswählen</p>
+                <p style="font-size: 0.9rem; color: #666; margin-top: 10px;">
+                    💡 Tipp: Verwende deinen iOS Shortcut für beste Ergebnisse!
+                </p>
                 <input type="file" id="fileInput" accept="image/*" capture="camera" style="display: none;">
-                <button class="btn" onclick="document.getElementById('fileInput').click()">Foto auswählen</button>
+                <button class="btn btn-ocr" onclick="document.getElementById('fileInput').click()">📷 Foto auswählen</button>
             </div>
 
-            <div id="manualEntry" style="margin-top: 20px;">
-                <h3>✍️ Oder manuell eingeben</h3>
+            <div class="ocr-status" id="ocrStatus">
+                🤖 Analysiere HelloFresh Rezept...
+            </div>
+
+            <div class="ocr-preview" id="ocrPreview">
+                <img id="previewImage" class="preview-image" alt="Rezept Vorschau">
+                
+                <div class="ocr-results">
+                    <div class="ocr-section">
+                        <h4>📝 Erkannte Daten</h4>
+                        <div><strong>Titel:</strong> <span id="detectedTitle">-</span></div>
+                        <div><strong>Zeit:</strong> <span id="detectedTime">-</span></div>
+                        <div><strong>Portionen:</strong> <span id="detectedPortions">-</span></div>
+                        <div><strong>Kalorien:</strong> <span id="detectedCalories">-</span></div>
+                    </div>
+
+                    <div class="ocr-section">
+                        <h4>🥘 Zutaten (<span id="ingredientCount">0</span>)</h4>
+                        <ul class="ingredient-list" id="detectedIngredients">
+                            <!-- Wird von OCR gefüllt -->
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="ocr-section" style="margin-top: 20px;">
+                    <h4>👨‍🍳 Zubereitungsschritte (<span id="stepCount">0</span>)</h4>
+                    <ul class="step-list" id="detectedSteps">
+                        <!-- Wird von OCR gefüllt -->
+                    </ul>
+                </div>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <button class="btn btn-ocr" onclick="saveOCRRecipe()" id="saveOCRBtn">✅ Rezept speichern</button>
+                    <button class="btn" onclick="resetOCR()" style="margin-left: 10px;">🔄 Neuer Scan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Entry Modal -->
+    <div id="manualModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeManualModal()">&times;</span>
+            <h2>✍️ Rezept manuell eingeben</h2>
+            
+            <div style="margin-top: 20px;">
                 <input type="text" placeholder="Rezeptname" id="recipeName" style="width: 100%; margin: 10px 0; padding: 10px; border-radius: 5px; border: 1px solid #ddd;">
                 <textarea placeholder="Zutaten (eine pro Zeile)" id="recipeIngredients" style="width: 100%; height: 100px; margin: 10px 0; padding: 10px; border-radius: 5px; border: 1px solid #ddd;"></textarea>
                 <textarea placeholder="Zubereitungsschritte" id="recipeSteps" style="width: 100%; height: 150px; margin: 10px 0; padding: 10px; border-radius: 5px; border: 1px solid #ddd;"></textarea>
-                <button class="btn" onclick="addManualRecipe()">Rezept hinzufügen</button>
+                <button class="btn" onclick="addManualRecipe()">✅ Rezept hinzufügen</button>
             </div>
         </div>
     </div>
@@ -476,9 +594,12 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Tesseract.js für OCR -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/3.0.3/tesseract.min.js"></script>
 
     <script>
-        // Firebase Konfiguration - DEINE ECHTEN DATEN
+        // Firebase Konfiguration
         const firebaseConfig = {
             apiKey: "AIzaSyAZGwkIrQ6CPA71FEibIKeRaeP5zWC74LY",
             authDomain: "rezeptkatalog-hellofresh.firebaseapp.com",
@@ -488,9 +609,11 @@
             appId: "1:1005120820521:web:aad70598a1db4ec0a6d338"
         };
 
-        // Firebase initialisieren
+        // App-Variablen
         let db = null;
         let isFirebaseConfigured = false;
+        let recipes = [];
+        let currentOCRResult = null;
 
         function initializeFirebase() {
             try {
@@ -498,15 +621,12 @@
                 db = firebase.firestore();
                 isFirebaseConfigured = true;
                 
-                // Connection Status überwachen
                 db.enableNetwork().then(() => {
                     updateConnectionStatus(true);
                     loadRecipes();
-                    showConnectionIndicator('online');
                 }).catch((error) => {
                     console.error('Firebase Network Error:', error);
                     updateConnectionStatus(false);
-                    showConnectionIndicator('offline');
                 });
 
                 return true;
@@ -514,28 +634,14 @@
                 console.error('Firebase Initialisierung fehlgeschlagen:', error);
                 document.getElementById('errorMessage').style.display = 'block';
                 document.getElementById('loadingMessage').style.display = 'none';
-                showConnectionIndicator('offline');
                 return false;
             }
         }
 
-        function showConnectionIndicator(status) {
-            const indicator = document.getElementById('connectionIndicator');
-            indicator.className = `connection-indicator show ${status}`;
-            indicator.textContent = status === 'online' ? '🟢 Verbunden' : '🔴 Offline';
-            
-            setTimeout(() => {
-                indicator.classList.remove('show');
-            }, 3000);
-        }
-
-        // App-Variablen
-        let recipes = [];
-        let currentPortions = 2;
-
         function updateConnectionStatus(isOnline) {
             const statusEl = document.getElementById('connectionStatus');
             const addBtn = document.getElementById('addBtn');
+            const manualBtn = document.getElementById('manualBtn');
             const exportBtn = document.getElementById('exportBtn');
             const searchBox = document.getElementById('searchBox');
 
@@ -543,6 +649,7 @@
                 statusEl.textContent = '🟢 Verbunden mit Cloud-Datenbank';
                 statusEl.className = 'status-online';
                 addBtn.disabled = false;
+                manualBtn.disabled = false;
                 exportBtn.disabled = false;
                 searchBox.disabled = false;
                 document.getElementById('errorMessage').style.display = 'none';
@@ -550,6 +657,7 @@
                 statusEl.textContent = '🔴 Offline - Nur Lesen möglich';
                 statusEl.className = 'status-offline';
                 addBtn.disabled = true;
+                manualBtn.disabled = true;
                 exportBtn.disabled = true;
                 searchBox.disabled = false;
             }
@@ -581,56 +689,72 @@
                 console.error('Fehler beim Laden der Rezepte:', error);
                 document.getElementById('loadingMessage').style.display = 'none';
                 updateConnectionStatus(false);
-                
-                // Demo-Daten laden wenn Firebase nicht verfügbar
                 loadDemoRecipes();
             }
         }
 
         function loadDemoRecipes() {
-            // Demo-Rezept für Präsentationszwecke
             recipes = [
                 {
                     id: 'demo-1',
-                    title: 'Demo: Pasta mit Tomatensauce',
+                    title: 'Demo: Linsenauflauf mit Käsehaube',
                     category: 'Vegetarisch',
                     portions: 2,
-                    time: '25 Min',
-                    calories: 580,
-                    tags: ['vegetarisch', 'pasta', 'demo'],
+                    time: '45-55 Min',
+                    timeValue: 50,
+                    timeDisplay: '45-55 Min',
+                    calories: 925,
+                    calorieValue: 925,
+                    calorieDisplay: '925 kcal',
+                    tags: ['vegetarisch', 'auflauf', 'demo', 'ocr-erkannt'],
                     ingredients: [
-                        '200g Spaghetti',
-                        '400g passierte Tomaten',
-                        '2 Knoblauchzehen',
-                        '1 Zwiebel',
-                        'Basilikum',
+                        'Kartoffeln (vorwiegend festkochend)',
+                        'Linsen (braun, getrocknet)',
+                        'Käse (junge Gouda, gerieben)',
+                        'Zwiebel',
+                        'Knoblauch',
+                        'Gemüsebrühe',
+                        'Passierte Tomaten',
                         'Olivenöl',
                         'Salz und Pfeffer'
                     ],
                     steps: [
                         {
-                            title: 'Wasser aufsetzen',
-                            description: 'Großen Topf mit Salzwasser zum Kochen bringen.'
+                            title: 'Kartoffeln backen',
+                            description: 'Hitze den Backofen auf 200°C vor. Kartoffeln halbieren und mit Öl, Salz bestreuen.'
                         },
                         {
-                            title: 'Sauce vorbereiten',
-                            description: 'Zwiebel und Knoblauch fein hacken, in Olivenöl anbraten.'
+                            title: 'Linsen kochen',
+                            description: 'Linsen in Gemüsebrühe ca. 20 Min kochen, bis sie weich sind.'
                         },
                         {
-                            title: 'Tomaten hinzufügen',
+                            title: 'Zwiebel anbraten',
+                            description: 'Zwiebel und Knoblauch fein hacken, in Olivenöl glasig braten.'
+                        },
+                        {
+                            title: 'Tomatensauce',
                             description: 'Passierte Tomaten hinzufügen, 10 Min köcheln lassen.'
+                        },
+                        {
+                            title: 'Auflauf schichten',
+                            description: 'Linsen-Tomaten-Mischung in Auflaufform, Kartoffeln darauf.'
+                        },
+                        {
+                            title: 'Mit Käse überbacken',
+                            description: 'Käse über den Auflauf streuen, 25-30 Min backen.'
                         }
                     ],
                     nutrition: {
-                        energy: 580,
-                        fat: 12,
-                        carbs: 95,
-                        protein: 20,
-                        fiber: 8,
-                        sugar: 12
+                        energy: 925,
+                        fat: 31,
+                        carbs: 126,
+                        protein: 42,
+                        fiber: 25,
+                        sugar: 24
                     },
-                    dataSize: '2.1 KB',
-                    createdAt: new Date()
+                    dataSize: '8.2 KB',
+                    createdAt: new Date(),
+                    source: 'OCR-Demo'
                 }
             ];
             
@@ -639,6 +763,414 @@
             renderRecipes();
         }
 
+        // OCR-Funktionen
+        async function processHelloFreshImage(file) {
+            const uploadArea = document.getElementById('uploadArea');
+            const ocrStatus = document.getElementById('ocrStatus');
+            const ocrPreview = document.getElementById('ocrPreview');
+            
+            uploadArea.classList.add('processing');
+            ocrStatus.classList.add('show');
+            ocrStatus.textContent = '🤖 Analysiere HelloFresh Rezept...';
+
+            // Bild preview
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('previewImage').src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            try {
+                // Schritt 1: Hauptbild extrahieren
+                ocrStatus.textContent = '🖼️ Extrahiere Hauptbild...';
+                const mainImageData = await extractMainImage(file);
+                
+                // Schritt 2: OCR mit Tesseract (bessere deutsche Erkennung)
+                ocrStatus.textContent = '🔍 Erkenne Text im Bild...';
+                
+                const { data: { text } } = await Tesseract.recognize(file, 'deu', {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            const progress = Math.round(m.progress * 100);
+                            ocrStatus.textContent = `🤖 Erkenne Text... ${progress}%`;
+                        }
+                    },
+                    tessedit_char_blacklist: '|□▢', // QR Code Zeichen ignorieren
+                    tessedit_pageseg_mode: Tesseract.PSM.AUTO
+                });
+
+                ocrStatus.textContent = '📝 Analysiere HelloFresh Layout (flexible Seitenerkennung)...';
+                
+                // HelloFresh-spezifische Extraktion mit flexibler Seitenerkennung
+                const extractedData = extractHelloFreshDataFlexible(text, mainImageData);
+                
+                // Ergebnisse anzeigen
+                displayOCRResults(extractedData);
+                
+                ocrStatus.textContent = '✅ Rezept erfolgreich erkannt!';
+                ocrPreview.classList.add('show');
+                
+                currentOCRResult = extractedData;
+
+            } catch (error) {
+                console.error('OCR Fehler:', error);
+                ocrStatus.textContent = '❌ Fehler beim Erkennen des Rezepts';
+                ocrStatus.style.background = '#ffebee';
+                ocrStatus.style.color = '#c62828';
+            }
+
+            uploadArea.classList.remove('processing');
+        }
+
+        // Hauptbild aus dem HelloFresh Layout extrahieren
+        async function extractMainImage(file) {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // HelloFresh Hauptbild ist meist im unteren Bereich von Seite 1
+                    // oder im oberen Bereich - wir extrahieren beide Bereiche
+                    const imageHeight = img.height / 2; // Etwa die Hälfte der Gesamthöhe
+                    const imageWidth = img.width / 2;   // Etwa die Hälfte der Gesamtbreite
+                    
+                    // Bereich 1: Unterer linker Bereich (klassische Position)
+                    const imageData1 = ctx.getImageData(0, img.height * 0.3, imageWidth, imageHeight);
+                    
+                    // Bereich 2: Unterer rechter Bereich (falls Seiten vertauscht)
+                    const imageData2 = ctx.getImageData(imageWidth, img.height * 0.3, imageWidth, imageHeight);
+                    
+                    // Das größere Bild nehmen (mehr Non-White-Pixel = wahrscheinlich das Hauptbild)
+                    const score1 = calculateImageComplexity(imageData1);
+                    const score2 = calculateImageComplexity(imageData2);
+                    
+                    const bestImageData = score1 > score2 ? imageData1 : imageData2;
+                    const x = score1 > score2 ? 0 : imageWidth;
+                    
+                    // Bild als Base64 extrahieren
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = imageWidth;
+                    tempCanvas.height = imageHeight;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.putImageData(bestImageData, 0, 0);
+                    
+                    const mainImageBase64 = tempCanvas.toDataURL('image/jpeg', 0.8);
+                    resolve(mainImageBase64);
+                };
+                
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        // Bildkomplexität berechnen (mehr Farben = wahrscheinlich das Hauptbild)
+        function calculateImageComplexity(imageData) {
+            const data = imageData.data;
+            let complexity = 0;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                
+                // Nicht-weiße Pixel zählen
+                if (r < 240 || g < 240 || b < 240) {
+                    complexity++;
+                }
+            }
+            
+            return complexity;
+        }
+
+        function extractHelloFreshDataFlexible(ocrText, mainImageData) {
+            console.log('OCR Text:', ocrText);
+            
+            // Text in Bereiche aufteilen und QR-Code-Bereiche ignorieren
+            const cleanText = ocrText
+                .replace(/[|□▢]/g, '') // QR Code Zeichen entfernen
+                .replace(/HelloFresh/gi, '') // HelloFresh Branding entfernen
+                .replace(/www\./gi, ''); // URLs entfernen
+            
+            const lines = cleanText.split('\n').map(line => line.trim()).filter(line => line.length > 2);
+            
+            const result = {
+                title: 'Unbekanntes Rezept',
+                timeValue: 30, // Numerischer Wert für Filter
+                timeDisplay: '30 Min', // Anzeige-String
+                calorieValue: 500, // Numerischer Wert für Filter
+                calorieDisplay: '500 kcal', // Anzeige-String
+                portions: 2,
+                ingredients: [],
+                steps: [],
+                nutrition: {
+                    energy: 500,
+                    fat: 15,
+                    carbs: 60,
+                    protein: 20,
+                    fiber: 8,
+                    sugar: 10
+                },
+                tags: ['hellofresh', 'ocr-erkannt'],
+                mainImage: mainImageData // Extrahiertes Hauptbild
+            };
+
+            // 1. TITEL ERKENNUNG (robuster)
+            // Titel ist meist der längste Text ohne Zahlen in den ersten Zeilen
+            const titleCandidates = lines.slice(0, 8).filter(line => 
+                line.length > 15 && 
+                line.length < 60 &&
+                !line.match(/\d+\s*(min|kcal|cal)/i) &&
+                !line.match(/^\d+[\s\.]/) && // Keine nummerierte Liste
+                !line.includes('Portionen') &&
+                !line.includes('Schwierigkeit')
+            );
+            
+            if (titleCandidates.length > 0) {
+                // Längsten Kandidaten als Titel nehmen
+                result.title = titleCandidates.reduce((a, b) => a.length > b.length ? a : b);
+            }
+
+            // 2. ZEIT EXTRAKTION (flexibel für beide Seitenreihenfolgen)
+            const timePatterns = [
+                /(\d+)\s*-\s*(\d+)\s*min/i,
+                /(\d+)\s*min/i,
+                /Zubereitungszeit[:\s]*(\d+)\s*-?\s*(\d+)?\s*min/i,
+                /Zeit[:\s]*(\d+)\s*-?\s*(\d+)?\s*min/i
+            ];
+            
+            for (const pattern of timePatterns) {
+                const match = cleanText.match(pattern);
+                if (match) {
+                    const time1 = parseInt(match[1]);
+                    const time2 = match[2] ? parseInt(match[2]) : null;
+                    
+                    if (time2) {
+                        result.timeValue = Math.round((time1 + time2) / 2); // Durchschnitt für Filter
+                        result.timeDisplay = `${time1}-${time2} Min`;
+                    } else {
+                        result.timeValue = time1;
+                        result.timeDisplay = `${time1} Min`;
+                    }
+                    break;
+                }
+            }
+
+            // 3. KALORIEN EXTRAKTION (flexibel)
+            const caloriePatterns = [
+                /(\d+)\s*kcal/i,
+                /(\d+)\s*cal/i,
+                /Energie[:\s]*(\d+)\s*kcal/i,
+                /Kalorien[:\s]*(\d+)/i
+            ];
+            
+            for (const pattern of caloriePatterns) {
+                const match = cleanText.match(pattern);
+                if (match) {
+                    result.calorieValue = parseInt(match[1]);
+                    result.calorieDisplay = `${result.calorieValue} kcal`;
+                    result.nutrition.energy = result.calorieValue;
+                    break;
+                }
+            }
+
+            // 4. PORTIONEN EXTRAKTION
+            const portionMatch = cleanText.match(/(\d+)\s*Portionen?/i);
+            if (portionMatch) {
+                result.portions = parseInt(portionMatch[1]);
+            }
+
+            // 5. ZUTATEN EXTRAKTION (flexible Nummerierung)
+            // Sowohl 1. 2. 3. als auch 1) 2) 3) oder nur Zahlen
+            const ingredientPatterns = [
+                /(\d+)[\.\)]\s*([^0-9\n]{8,80}?)(?=\d+[\.\)]|$)/gi,
+                /^(\d+)\s+([^0-9\n]{8,80}?)$/gm
+            ];
+            
+            for (const pattern of ingredientPatterns) {
+                const matches = [...cleanText.matchAll(pattern)];
+                if (matches.length > 3) { // Mindestens 4 Zutaten gefunden
+                    result.ingredients = matches
+                        .map(match => match[2].trim())
+                        .filter(ingredient => 
+                            ingredient.length > 4 && 
+                            ingredient.length < 100 &&
+                            !ingredient.toLowerCase().includes('schritt')
+                        )
+                        .slice(0, 20); // Max 20 Zutaten
+                    break;
+                }
+            }
+
+            // Fallback: Gängige Zutaten suchen
+            if (result.ingredients.length < 3) {
+                const commonWords = ['kartoffel', 'zwiebel', 'knoblauch', 'öl', 'salz', 'pfeffer', 'käse', 'linsen', 'tomaten', 'fleisch', 'hähnchen', 'rind', 'schwein', 'fisch', 'lachs', 'pasta', 'nudeln', 'reis', 'brot'];
+                const potentialIngredients = lines.filter(line => {
+                    const lowerLine = line.toLowerCase();
+                    return commonWords.some(word => lowerLine.includes(word)) && 
+                           line.length > 5 && 
+                           line.length < 80 &&
+                           !line.match(/^\d+\s*min/i) &&
+                           !line.match(/\d+\s*kcal/i);
+                });
+                
+                if (potentialIngredients.length > result.ingredients.length) {
+                    result.ingredients = potentialIngredients.slice(0, 15);
+                }
+            }
+
+            // 6. ZUBEREITUNGSSCHRITTE (bessere Erkennung)
+            const stepKeywords = ['erhitzen', 'kochen', 'braten', 'backen', 'mischen', 'hinzufügen', 'würzen', 'schneiden', 'hacken', 'aufkochen', 'servieren', 'anbraten', 'dünsten', 'rösten'];
+            const potentialSteps = lines.filter(line => 
+                line.length > 20 && 
+                line.length < 200 &&
+                stepKeywords.some(keyword => line.toLowerCase().includes(keyword)) &&
+                !line.match(/^\d+[\.\)]\s*[a-zA-ZäöüßÄÖÜ]/) // Keine Zutatenliste
+            );
+
+            let stepCounter = 1;
+            potentialSteps.slice(0, 8).forEach(step => { // Max 8 Schritte
+                result.steps.push({
+                    title: `Schritt ${stepCounter}`,
+                    description: step.trim()
+                });
+                stepCounter++;
+            });
+
+            // 7. AUTOMATISCHE KATEGORISIERUNG (basierend auf Zutaten)
+            const ingredientText = result.ingredients.join(' ').toLowerCase();
+            
+            // Fleisch-Detection
+            if (ingredientText.match(/(fleisch|hack|rind|schwein|speck|würst|schinken|salami)/)) {
+                result.tags.push('fleisch');
+            }
+            // Fisch-Detection  
+            else if (ingredientText.match(/(fisch|lachs|thunfisch|garnelen|shrimp|meeresfrüchte)/)) {
+                result.tags.push('fisch');
+            }
+            // Vegetarisch als Default
+            else {
+                result.tags.push('vegetarisch');
+            }
+
+            // Schnelligkeit basierend auf Zeit
+            if (result.timeValue <= 20) {
+                result.tags.push('express', 'schnell');
+            } else if (result.timeValue <= 30) {
+                result.tags.push('schnell');
+            }
+
+            // Kalorien-Tags
+            if (result.calorieValue < 400) {
+                result.tags.push('light');
+            } else if (result.calorieValue < 600) {
+                result.tags.push('low-cal');
+            }
+
+            // Low-Carb Detection
+            if (ingredientText.match(/(salat|gemüse|käse|ei)/) && !ingredientText.match(/(pasta|nudeln|reis|kartoffel|brot)/)) {
+                result.tags.push('low-carb');
+            }
+
+            // 8. NÄHRWERTE SCHÄTZEN (basierend auf Zutaten und Kalorien)
+            if (result.calorieValue) {
+                result.nutrition.energy = result.calorieValue;
+                // Grobe Schätzung basierend auf Kategorie
+                if (result.tags.includes('fleisch')) {
+                    result.nutrition.protein = Math.round(result.calorieValue * 0.25 / 4);
+                    result.nutrition.fat = Math.round(result.calorieValue * 0.35 / 9);
+                    result.nutrition.carbs = Math.round(result.calorieValue * 0.40 / 4);
+                } else if (result.tags.includes('vegetarisch')) {
+                    result.nutrition.protein = Math.round(result.calorieValue * 0.15 / 4);
+                    result.nutrition.fat = Math.round(result.calorieValue * 0.30 / 9);
+                    result.nutrition.carbs = Math.round(result.calorieValue * 0.55 / 4);
+                }
+                result.nutrition.fiber = Math.round(result.nutrition.carbs * 0.1);
+                result.nutrition.sugar = Math.round(result.nutrition.carbs * 0.3);
+            }
+
+            console.log('Extracted HelloFresh Data:', result);
+            return result;
+        }
+
+        function displayOCRResults(data) {
+            // Basis-Daten
+            document.getElementById('detectedTitle').textContent = data.title;
+            document.getElementById('detectedTime').textContent = data.timeDisplay;
+            document.getElementById('detectedPortions').textContent = data.portions;
+            document.getElementById('detectedCalories').textContent = data.calorieDisplay;
+
+            // Zutaten
+            const ingredientsList = document.getElementById('detectedIngredients');
+            ingredientsList.innerHTML = '';
+            data.ingredients.forEach(ingredient => {
+                const li = document.createElement('li');
+                li.textContent = ingredient;
+                ingredientsList.appendChild(li);
+            });
+            document.getElementById('ingredientCount').textContent = data.ingredients.length;
+
+            // Schritte
+            const stepsList = document.getElementById('detectedSteps');
+            stepsList.innerHTML = '';
+            data.steps.forEach((step, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `<span class="step-number">${index + 1}</span>${step.description}`;
+                stepsList.appendChild(li);
+            });
+            document.getElementById('stepCount').textContent = data.steps.length;
+
+            // Hauptbild anzeigen falls extrahiert
+            if (data.mainImage) {
+                const previewImage = document.getElementById('previewImage');
+                previewImage.src = data.mainImage;
+                previewImage.style.border = '3px solid #4caf50';
+                previewImage.title = 'Extrahiertes Hauptbild';
+            }
+        }
+
+        function resetOCR() {
+            document.getElementById('ocrPreview').classList.remove('show');
+            document.getElementById('ocrStatus').classList.remove('show');
+            document.getElementById('uploadArea').classList.remove('processing');
+            document.getElementById('fileInput').value = '';
+            currentOCRResult = null;
+        }
+
+        async function saveOCRRecipe() {
+            if (!currentOCRResult) return;
+
+            const recipeData = {
+                title: currentOCRResult.title,
+                category: "HelloFresh OCR",
+                portions: currentOCRResult.portions,
+                time: currentOCRResult.timeDisplay,
+                timeValue: currentOCRResult.timeValue, // Für Filter
+                calories: currentOCRResult.calorieValue,
+                calorieDisplay: currentOCRResult.calorieDisplay,
+                tags: currentOCRResult.tags,
+                ingredients: currentOCRResult.ingredients,
+                steps: currentOCRResult.steps,
+                nutrition: currentOCRResult.nutrition,
+                mainImage: currentOCRResult.mainImage, // Extrahiertes Hauptbild
+                source: 'OCR-HelloFresh-Flexible'
+            };
+
+            recipeData.dataSize = calculateDataSize(recipeData);
+
+            const savedId = await saveRecipe(recipeData);
+            
+            if (savedId) {
+                closeUploadModal();
+                resetOCR();
+                alert('✅ OCR-Rezept mit Hauptbild erfolgreich gespeichert!');
+            }
+        }
+
+        // Standard-Funktionen (gekürzt)
         async function saveRecipe(recipe) {
             if (!isFirebaseConfigured) {
                 alert('❌ Keine Datenbankverbindung verfügbar!');
@@ -652,7 +1184,6 @@
                 const docRef = await db.collection('recipes').add(recipe);
                 recipe.id = docRef.id;
                 
-                // Lokale Liste aktualisieren
                 recipes.unshift(recipe);
                 document.getElementById('recipeCount').textContent = `📚 ${recipes.length} Rezepte geladen`;
                 renderRecipes();
@@ -665,27 +1196,6 @@
             }
         }
 
-        async function deleteRecipe(recipeId) {
-            if (!isFirebaseConfigured) return;
-            if (recipeId.startsWith('demo-')) {
-                alert('❌ Demo-Rezepte können nicht gelöscht werden');
-                return;
-            }
-
-            try {
-                await db.collection('recipes').doc(recipeId).delete();
-                
-                // Lokale Liste aktualisieren
-                recipes = recipes.filter(r => r.id !== recipeId);
-                document.getElementById('recipeCount').textContent = `📚 ${recipes.length} Rezepte geladen`;
-                renderRecipes();
-                
-            } catch (error) {
-                console.error('Fehler beim Löschen:', error);
-                alert('❌ Fehler beim Löschen des Rezepts');
-            }
-        }
-
         function renderRecipes() {
             const grid = document.getElementById('recipesGrid');
             grid.innerHTML = '';
@@ -694,7 +1204,7 @@
                 grid.innerHTML = `
                     <div style="grid-column: 1/-1; text-align: center; padding: 50px; color: white;">
                         <h3>📚 Noch keine Rezepte vorhanden</h3>
-                        <p>Füge dein erstes Rezept hinzu!</p>
+                        <p>Scanne dein erstes HelloFresh Rezept!</p>
                     </div>
                 `;
                 return;
@@ -705,14 +1215,16 @@
                 card.className = 'recipe-card';
                 card.onclick = () => openRecipe(index);
                 
+                const isOCRRecipe = recipe.tags && recipe.tags.includes('ocr-erkannt');
                 const isDemoRecipe = recipe.id && recipe.id.startsWith('demo-');
                 
                 card.innerHTML = `
                     <div class="sync-status ${recipe.id ? (isDemoRecipe ? 'error' : '') : 'syncing'}"></div>
-                    ${recipe.mainImage ? `<div class="recipe-main-image" style="width: 100%; height: 200px; border-radius: 15px; margin-bottom: 15px; background-image: url('${recipe.mainImage}'); background-size: cover; background-position: center;"></div>` : ''}
                     <div class="recipe-header">
                         <div>
-                            <div class="recipe-title">${recipe.title}${isDemoRecipe ? ' (Demo)' : ''}</div>
+                            <div class="recipe-title">
+                                ${isOCRRecipe ? '🤖 ' : ''}${recipe.title}${isDemoRecipe ? ' (Demo)' : ''}
+                            </div>
                             <div class="recipe-meta">⏱️ ${recipe.time} | 👥 ${recipe.portions} Portionen | 🔥 ${recipe.calories} kcal</div>
                         </div>
                     </div>
@@ -720,10 +1232,10 @@
                         ${recipe.tags.map(tag => `<span class="recipe-tag">${tag}</span>`).join('')}
                     </div>
                     <div class="nutrition-info">
-                        <strong>Nährwerte pro Portion:</strong> ${recipe.nutrition.fat}g Fett • ${recipe.nutrition.carbs}g Kohlenhydrate • ${recipe.nutrition.protein}g Eiweiß • ${recipe.nutrition.fiber}g Ballaststoffe
+                        <strong>Nährwerte pro Portion:</strong> ${recipe.nutrition.fat}g Fett • ${recipe.nutrition.carbs}g Kohlenhydrate • ${recipe.nutrition.protein}g Eiweiß
                     </div>
                     <div class="data-size-info" style="margin-top: 10px; font-size: 0.8rem; color: #666; text-align: right;">
-                        📊 Datengröße: ${recipe.dataSize || calculateDataSize(recipe)}
+                        📊 ${recipe.dataSize || calculateDataSize(recipe)} ${isOCRRecipe ? '| 🤖 OCR' : ''}
                     </div>
                 `;
                 
@@ -732,85 +1244,61 @@
         }
 
         function calculateDataSize(recipe) {
-            let size = 0;
-            
-            size += JSON.stringify({
-                title: recipe.title,
-                ingredients: recipe.ingredients,
-                steps: recipe.steps ? recipe.steps.map(s => ({title: s.title, description: s.description})) : [],
-                nutrition: recipe.nutrition
-            }).length;
-            
-            if (recipe.mainImage) {
-                size += recipe.mainImage.length * 0.75;
-            }
-            
-            if (recipe.steps) {
-                recipe.steps.forEach(step => {
-                    if (step.image) {
-                        size += step.image.length * 0.75;
-                    }
-                });
-            }
-            
+            let size = JSON.stringify(recipe).length;
             if (size < 1024) return `${Math.round(size)} B`;
             if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
             return `${Math.round(size / (1024 * 1024))} MB`;
         }
 
+        // Modal-Funktionen
+        function openUploadModal() {
+            document.getElementById('uploadModal').style.display = 'block';
+        }
+
+        function closeUploadModal() {
+            document.getElementById('uploadModal').style.display = 'none';
+            resetOCR();
+        }
+
+        function openManualModal() {
+            document.getElementById('manualModal').style.display = 'block';
+        }
+
+        function closeManualModal() {
+            document.getElementById('manualModal').style.display = 'none';
+        }
+
         function openRecipe(index) {
             const recipe = recipes[index];
-            currentPortions = recipe.portions;
-            
             const content = document.getElementById('recipeContent');
-            const isDemoRecipe = recipe.id && recipe.id.startsWith('demo-');
+            const isOCRRecipe = recipe.tags && recipe.tags.includes('ocr-erkannt');
             
             content.innerHTML = `
-                <h2>${recipe.title}${isDemoRecipe ? ' (Demo)' : ''}</h2>
+                <h2>${isOCRRecipe ? '🤖 ' : ''}${recipe.title}</h2>
                 <div class="recipe-meta" style="margin: 10px 0; font-size: 1.1rem;">
                     ⏱️ ${recipe.time} | 👥 ${recipe.portions} Portionen | 🔥 ${recipe.calories} kcal
                 </div>
                 
-                ${recipe.mainImage ? `
-                    <div class="main-recipe-image" style="width: 100%; height: 300px; border-radius: 15px; margin: 20px 0; background-image: url('${recipe.mainImage}'); background-size: cover; background-position: center; box-shadow: 0 8px 25px rgba(0,0,0,0.15);"></div>
+                ${isOCRRecipe ? `
+                    <div style="background: #e8f5e8; padding: 15px; border-radius: 10px; margin: 15px 0; border-left: 4px solid #4caf50;">
+                        <strong>🤖 OCR-erkanntes Rezept</strong><br>
+                        <span style="font-size: 0.9rem;">Automatisch aus HelloFresh-Foto extrahiert</span>
+                    </div>
                 ` : ''}
 
-                <div class="recipe-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 10px;">
-                    <div style="text-align: center;">
-                        <strong>📊 Datengröße</strong><br>
-                        <span style="color: #667eea;">${recipe.dataSize || calculateDataSize(recipe)}</span>
-                    </div>
-                    <div style="text-align: center;">
-                        <strong>🖼️ Bilder</strong><br>
-                        <span style="color: #667eea;">${1 + (recipe.steps ? recipe.steps.filter(step => step.image).length : 0)} Stück</span>
-                    </div>
-                    <div style="text-align: center;">
-                        <strong>📝 Schritte</strong><br>
-                        <span style="color: #667eea;">${recipe.steps ? recipe.steps.length : 0} Schritte</span>
-                    </div>
-                    <div style="text-align: center;">
-                        <strong>🥘 Zutaten</strong><br>
-                        <span style="color: #667eea;">${recipe.ingredients ? recipe.ingredients.length : 0} Stück</span>
-                    </div>
-                </div>
-
                 <div class="ingredients-list">
-                    <h3>🛒 Zutaten</h3>
+                    <h3>🛒 Zutaten (${recipe.ingredients ? recipe.ingredients.length : 0})</h3>
                     <ul>
                         ${recipe.ingredients ? recipe.ingredients.map(ingredient => `<li>${ingredient}</li>`).join('') : '<li>Keine Zutaten</li>'}
                     </ul>
                 </div>
 
                 <div>
-                    <h3>👨‍🍳 Zubereitung</h3>
+                    <h3>👨‍🍳 Zubereitung (${recipe.steps ? recipe.steps.length : 0} Schritte)</h3>
                     ${recipe.steps ? recipe.steps.map((step, i) => `
                         <div class="step">
                             <div class="step-title">${i + 1}. ${step.title}</div>
-                            ${step.image ? `
-                                <div class="step-image" style="width: 200px; height: 150px; border-radius: 10px; margin: 10px 0; background-image: url('${step.image}'); background-size: cover; background-position: center; float: right; margin-left: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);"></div>
-                            ` : ''}
-                            <div style="min-height: 150px;">${step.description}</div>
-                            <div style="clear: both;"></div>
+                            <div>${step.description}</div>
                         </div>
                     `).join('') : '<p>Keine Zubereitungsschritte</p>'}
                 </div>
@@ -826,35 +1314,44 @@
                         <div><strong>Zucker:</strong> ${recipe.nutrition ? recipe.nutrition.sugar : 0}g</div>
                     </div>
                 </div>
-
-                ${recipe.id && !isDemoRecipe ? `
-                    <div style="margin-top: 30px; text-align: center;">
-                        <button class="btn" style="background: #f44336;" onclick="confirmDeleteRecipe('${recipe.id}')">🗑️ Rezept löschen</button>
-                    </div>
-                ` : ''}
             `;
             
             document.getElementById('recipeModal').style.display = 'block';
-        }
-
-        function confirmDeleteRecipe(recipeId) {
-            if (confirm('❓ Möchtest du dieses Rezept wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) {
-                deleteRecipe(recipeId);
-                closeRecipeModal();
-            }
         }
 
         function closeRecipeModal() {
             document.getElementById('recipeModal').style.display = 'none';
         }
 
-        function openUploadModal() {
-            document.getElementById('uploadModal').style.display = 'block';
-        }
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeFirebase();
+            
+            // File Upload Handler
+            const fileInput = document.getElementById('fileInput');
+            fileInput.addEventListener('change', async function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    await processHelloFreshImage(file);
+                }
+            });
 
-        function closeUploadModal() {
-            document.getElementById('uploadModal').style.display = 'none';
-        }
+            // Tag Filter
+            document.querySelectorAll('.tag').forEach(tag => {
+                tag.addEventListener('click', function() {
+                    document.querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+                    filterRecipes();
+                });
+            });
+
+            // Modal Close
+            window.addEventListener('click', function(e) {
+                if (e.target.classList.contains('modal')) {
+                    e.target.style.display = 'none';
+                }
+            });
+        });
 
         function filterRecipes() {
             const searchTerm = document.getElementById('searchBox').value.toLowerCase();
@@ -869,12 +1366,53 @@
                 const matchesSearch = recipe.title.toLowerCase().includes(searchTerm) || 
                                     (recipe.ingredients && recipe.ingredients.some(ing => ing.toLowerCase().includes(searchTerm)));
                 
-                const matchesFilter = activeFilter === 'all' || 
-                                    (recipe.tags && recipe.tags.includes(activeFilter)) ||
-                                    (activeFilter === 'schnell' && parseInt(recipe.time) < 30);
+                let matchesFilter = false;
+                
+                switch(activeFilter) {
+                    case 'all':
+                        matchesFilter = true;
+                        break;
+                    case 'schnell':
+                        // Zeit-basierter Filter (unterstützt beide Formate)
+                        const timeValue = recipe.timeValue || extractTimeValue(recipe.time || recipe.timeDisplay);
+                        matchesFilter = timeValue < 30;
+                        break;
+                    case 'quick-prep':
+                        // Express-Filter für sehr schnelle Rezepte
+                        const quickTimeValue = recipe.timeValue || extractTimeValue(recipe.time || recipe.timeDisplay);
+                        matchesFilter = quickTimeValue <= 20;
+                        break;
+                    case 'low-cal':
+                        // Kalorien-basierter Filter
+                        const calorieValue = recipe.calorieValue || recipe.calories || extractCalorieValue(recipe.calorieDisplay);
+                        matchesFilter = calorieValue < 600;
+                        break;
+                    default:
+                        // Standard-Tag-Filter
+                        matchesFilter = (recipe.tags && recipe.tags.includes(activeFilter));
+                        break;
+                }
                 
                 card.style.display = matchesSearch && matchesFilter ? 'block' : 'none';
             });
+        }
+
+        // Hilfsfunktionen für numerische Extraktion aus Legacy-Formaten
+        function extractTimeValue(timeString) {
+            if (!timeString) return 30;
+            const match = timeString.match(/(\d+)-?(\d+)?/);
+            if (match) {
+                const time1 = parseInt(match[1]);
+                const time2 = match[2] ? parseInt(match[2]) : null;
+                return time2 ? Math.round((time1 + time2) / 2) : time1;
+            }
+            return 30;
+        }
+
+        function extractCalorieValue(calorieString) {
+            if (!calorieString) return 500;
+            const match = calorieString.toString().match(/(\d+)/);
+            return match ? parseInt(match[1]) : 500;
         }
 
         function exportRecipes() {
@@ -883,7 +1421,7 @@
             
             const link = document.createElement('a');
             link.href = URL.createObjectURL(dataBlob);
-            link.download = `rezeptkatalog-hellofresh-${new Date().toISOString().split('T')[0]}.json`;
+            link.download = `hellofresh-ocr-export-${new Date().toISOString().split('T')[0]}.json`;
             link.click();
         }
 
@@ -915,81 +1453,21 @@
                     }
                 };
                 
-                // Berechne Datengröße
                 newRecipe.dataSize = calculateDataSize(newRecipe);
                 
                 const savedId = await saveRecipe(newRecipe);
                 
                 if (savedId) {
-                    closeUploadModal();
-                    
-                    // Felder leeren
+                    closeManualModal();
                     document.getElementById('recipeName').value = '';
                     document.getElementById('recipeIngredients').value = '';
                     document.getElementById('recipeSteps').value = '';
-                    
-                    alert('✅ Rezept erfolgreich in der Cloud gespeichert!');
+                    alert('✅ Rezept erfolgreich gespeichert!');
                 }
             } else {
                 alert('❓ Bitte alle Felder ausfüllen!');
             }
         }
-
-        // Event Listeners
-        document.addEventListener('DOMContentLoaded', function() {
-            // Firebase initialisieren
-            if (initializeFirebase()) {
-                console.log('✅ Firebase erfolgreich initialisiert');
-            }
-            
-            // Tag Filter
-            document.querySelectorAll('.tag').forEach(tag => {
-                tag.addEventListener('click', function() {
-                    document.querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
-                    this.classList.add('active');
-                    filterRecipes();
-                });
-            });
-
-            // File Upload (vereinfacht für Demo)
-            const fileInput = document.getElementById('fileInput');
-            const uploadArea = document.getElementById('uploadArea');
-            
-            fileInput.addEventListener('change', async function(e) {
-                const file = e.target.files[0];
-                if (file) {
-                    // Vereinfachte Demo-Version
-                    alert('📸 Foto-Upload empfangen! In der vollständigen Version würde hier OCR-Verarbeitung stattfinden.');
-                }
-            });
-
-            // Modal schließen bei Klick außerhalb
-            window.addEventListener('click', function(e) {
-                const uploadModal = document.getElementById('uploadModal');
-                const recipeModal = document.getElementById('recipeModal');
-                
-                if (e.target === uploadModal) {
-                    closeUploadModal();
-                }
-                if (e.target === recipeModal) {
-                    closeRecipeModal();
-                }
-            });
-        });
-
-        // Offline/Online Detection
-        window.addEventListener('online', () => {
-            if (isFirebaseConfigured) {
-                updateConnectionStatus(true);
-                loadRecipes();
-                showConnectionIndicator('online');
-            }
-        });
-
-        window.addEventListener('offline', () => {
-            updateConnectionStatus(false);
-            showConnectionIndicator('offline');
-        });
     </script>
 </body>
 </html>
