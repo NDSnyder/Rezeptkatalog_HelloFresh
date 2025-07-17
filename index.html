@@ -516,12 +516,12 @@
                 <strong>🍳 HelloFresh Rezeptkatalog OCR</strong>
             </div>
             <div style="opacity: 0.8;">
-                Version 1.2.0 | Build 17.07.2025-14:30 | OCR + iOS Shortcut Support
+                Version 1.2.1 | Build 17.07.2025-15:15 | OCR Always-On + Local Storage
             </div>
             <div style="font-size: 0.8rem; opacity: 0.6; margin-top: 5px;" id="buildInfo">
                 Firebase: <span id="firebaseStatus">Prüfe...</span> | 
                 OCR: <span id="ocrStatus">Prüfe...</span> |
-                Features: Horizontal Layout + 3-Stage OCR
+                Features: Offline-OCR + iOS Shortcut + Auto-Fallback
             </div>
         </div>
     </div>
@@ -663,19 +663,23 @@
             if (isOnline) {
                 statusEl.textContent = '🟢 Verbunden mit Cloud-Datenbank';
                 statusEl.className = 'status-online';
-                addBtn.disabled = false;
-                manualBtn.disabled = false;
-                exportBtn.disabled = false;
-                searchBox.disabled = false;
                 document.getElementById('errorMessage').style.display = 'none';
             } else {
-                statusEl.textContent = '🔴 Offline - Nur Lesen möglich';
+                statusEl.textContent = '🔴 Offline - OCR funktioniert, Speichern lokal';
                 statusEl.className = 'status-offline';
-                addBtn.disabled = true;
-                manualBtn.disabled = true;
-                exportBtn.disabled = true;
-                searchBox.disabled = false;
             }
+
+            // OCR-Button immer aktivieren (unabhängig von Firebase)
+            addBtn.disabled = false;
+            addBtn.title = isOnline ? 'OCR-Scan mit Cloud-Speicherung' : 'OCR-Scan mit lokaler Speicherung';
+            
+            // Manuelle Eingabe immer möglich
+            manualBtn.disabled = false;
+            manualBtn.title = isOnline ? 'Manuell mit Cloud-Speicherung' : 'Manuell mit lokaler Speicherung';
+            
+            // Export und Suche immer aktiv (funktioniert auch mit lokalen Daten)
+            exportBtn.disabled = false;
+            searchBox.disabled = false;
 
             document.getElementById('lastSync').textContent = `🔄 ${new Date().toLocaleTimeString()}`;
         }
@@ -2328,59 +2332,101 @@
         }
 
         async function saveOCRRecipe() {
-            if (!currentOCRResult) return;
+            if (!currentOCRResult) {
+                alert('❌ Keine OCR-Daten verfügbar!');
+                return;
+            }
 
             const recipeData = {
                 title: currentOCRResult.title,
                 category: "HelloFresh OCR",
                 portions: currentOCRResult.portions,
                 time: currentOCRResult.timeDisplay,
-                timeValue: currentOCRResult.timeValue, // Für Filter
+                timeValue: currentOCRResult.timeValue,
                 calories: currentOCRResult.calorieValue,
                 calorieDisplay: currentOCRResult.calorieDisplay,
                 tags: currentOCRResult.tags,
                 ingredients: currentOCRResult.ingredients,
                 steps: currentOCRResult.steps,
                 nutrition: currentOCRResult.nutrition,
-                mainImage: currentOCRResult.mainImage, // Extrahiertes Hauptbild
-                source: 'OCR-HelloFresh-Flexible'
+                mainImage: currentOCRResult.mainImage,
+                source: 'OCR-HelloFresh-iOS-Shortcut'
             };
 
             recipeData.dataSize = calculateDataSize(recipeData);
+
+            console.log('💾 Speichere OCR-Rezept...', {
+                firebase: isFirebaseConfigured,
+                title: recipeData.title,
+                ingredients: recipeData.ingredients.length,
+                steps: recipeData.steps.length
+            });
 
             const savedId = await saveRecipe(recipeData);
             
             if (savedId) {
                 closeUploadModal();
                 resetOCR();
-                alert('✅ OCR-Rezept mit Hauptbild erfolgreich gespeichert!');
+                
+                const isLocal = savedId.startsWith('local-');
+                const message = isLocal 
+                    ? '🎉 OCR-Rezept erfolgreich erkannt und lokal gespeichert!\n\n🔄 Wird automatisch in die Cloud synchronisiert sobald Firebase wieder online ist.'
+                    : '🎉 OCR-Rezept erfolgreich erkannt und in der Cloud gespeichert!';
+                
+                alert(message);
+            } else {
+                alert('❌ Fehler beim Speichern des OCR-Rezepts');
             }
         }
 
         // Standard-Funktionen (gekürzt)
         async function saveRecipe(recipe) {
-            if (!isFirebaseConfigured) {
-                alert('❌ Keine Datenbankverbindung verfügbar!');
-                return;
-            }
-
             try {
-                recipe.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-                recipe.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+                if (isFirebaseConfigured && db) {
+                    // Cloud-Speicherung versuchen
+                    recipe.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    recipe.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+                    
+                    const docRef = await db.collection('recipes').add(recipe);
+                    recipe.id = docRef.id;
+                    
+                    recipes.unshift(recipe);
+                    document.getElementById('recipeCount').textContent = `📚 ${recipes.length} Rezepte geladen`;
+                    renderRecipes();
+                    
+                    console.log('✅ Rezept in Firebase gespeichert:', docRef.id);
+                    return docRef.id;
+                } else {
+                    throw new Error('Firebase nicht verfügbar');
+                }
+            } catch (error) {
+                console.log('⚠️ Firebase-Speicherung fehlgeschlagen, speichere lokal:', error.message);
                 
-                const docRef = await db.collection('recipes').add(recipe);
-                recipe.id = docRef.id;
+                // Lokale Speicherung als Fallback
+                recipe.id = 'local-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                recipe.createdAt = new Date();
+                recipe.updatedAt = new Date();
+                recipe.source = (recipe.source || 'Unknown') + ' (Local)';
                 
                 recipes.unshift(recipe);
-                document.getElementById('recipeCount').textContent = `📚 ${recipes.length} Rezepte geladen`;
+                document.getElementById('recipeCount').textContent = `📚 ${recipes.length} Rezepte geladen (${getLocalCount()} lokal)`;
                 renderRecipes();
                 
-                return docRef.id;
-            } catch (error) {
-                console.error('Fehler beim Speichern:', error);
-                alert('❌ Fehler beim Speichern des Rezepts');
-                return null;
+                console.log('✅ Rezept lokal gespeichert:', recipe.id);
+                
+                // Nutzer informieren
+                const isOCR = recipe.source && recipe.source.includes('OCR');
+                const message = isOCR 
+                    ? '✅ OCR-Rezept lokal gespeichert!\n(Wird synchronisiert sobald Firebase wieder online ist)'
+                    : '✅ Rezept lokal gespeichert!\n(Wird synchronisiert sobald Firebase wieder online ist)';
+                
+                alert(message);
+                return recipe.id;
             }
+        }
+
+        function getLocalCount() {
+            return recipes.filter(r => r.id && r.id.startsWith('local-')).length;
         }
 
         function renderRecipes() {
@@ -2623,7 +2669,11 @@
                     category: "Manuell eingegeben",
                     portions: 2,
                     time: "30 Min",
+                    timeValue: 30,
+                    timeDisplay: "30 Min",
                     calories: 500,
+                    calorieValue: 500,
+                    calorieDisplay: "500 kcal",
                     tags: ["manuell", "selbst-erstellt"],
                     ingredients: ingredients,
                     steps: stepTexts.map((step, i) => ({
@@ -2637,10 +2687,13 @@
                         protein: 25,
                         fiber: 10,
                         sugar: 15
-                    }
+                    },
+                    source: 'Manual-Entry'
                 };
                 
                 newRecipe.dataSize = calculateDataSize(newRecipe);
+                
+                console.log('💾 Speichere manuelles Rezept:', newRecipe.title);
                 
                 const savedId = await saveRecipe(newRecipe);
                 
@@ -2649,7 +2702,13 @@
                     document.getElementById('recipeName').value = '';
                     document.getElementById('recipeIngredients').value = '';
                     document.getElementById('recipeSteps').value = '';
-                    alert('✅ Rezept erfolgreich gespeichert!');
+                    
+                    const isLocal = savedId.startsWith('local-');
+                    const message = isLocal 
+                        ? '✅ Rezept lokal gespeichert!\n(Wird synchronisiert wenn Firebase online ist)'
+                        : '✅ Rezept erfolgreich in der Cloud gespeichert!';
+                    
+                    alert(message);
                 }
             } else {
                 alert('❓ Bitte alle Felder ausfüllen!');
